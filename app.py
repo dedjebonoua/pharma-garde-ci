@@ -1,42 +1,65 @@
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
-# Configuration de la page
-st.set_page_config(page_title="PharmaGarde CI", page_icon="🏥")
+st.set_page_config(page_title="PharmaGarde & Santé CI", page_icon="🇨🇮")
 
-st.title("🏥 PharmaGarde Côte d'Ivoire")
-st.markdown("Trouvez rapidement la pharmacie de garde la plus proche de chez vous.")
+# --- FONCTION DE RÉCUPÉRATION (SCRAPING) ---
+@st.cache_data(ttl=86400)
+def scraper_toute_la_garde():
+    urls = {
+        "Abidjan": "https://www.pharmacies-de-garde.ci/liste-des-pharmacies-de-garde-a-abidjan-votre-permanence/",
+        "Intérieur": "https://www.pharmacies-de-garde.ci/pharmacies-de-garde-villes-de-linterieur/"
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    all_data = []
 
-# 1. Simulation de la base de données (À remplacer plus tard par votre fichier Excel/JSON)
-data = [
-    {"Commune": "Cocody", "Pharmacie": "Pharmacie de la Riviera 3", "Quartier": "Riviera 3", "Contact": "272247XXXX", "Maps": "https://goo.gl/maps/xyz1"},
-    {"Commune": "Yopougon", "Pharmacie": "Pharmacie Bel Air", "Quartier": "Siporex", "Contact": "2723XXXXXX", "Maps": "https://goo.gl/maps/xyz2"},
-    {"Commune": "Marcory", "Pharmacie": "Pharmacie de l'INJS", "Quartier": "Zone 4", "Contact": "2721XXXXXX", "Maps": "https://goo.gl/maps/xyz3"},
-    {"Commune": "Abobo", "Pharmacie": "Pharmacie de la Mairie", "Quartier": "Abobo Centre", "Contact": "2724XXXXXX", "Maps": "https://goo.gl/maps/xyz4"},
-]
-df = pd.DataFrame(data)
+    for zone, url in urls.items():
+        try:
+            res = requests.get(url, headers=headers)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            for el in soup.find_all(['li', 'p', 'tr']):
+                txt = el.text.strip()
+                if "-" in txt and len(txt) > 15:
+                    parts = txt.split("-")
+                    all_data.append({
+                        "Type": "Pharmacie de Garde",
+                        "Zone": zone,
+                        "Nom": parts[0].strip(),
+                        "Localisation": parts[1].strip() if len(parts)>1 else "Non précisé",
+                        "Contact": parts[2].strip() if len(parts)>2 else "Voir sur place"
+                    })
+        except:
+            continue
+    return pd.DataFrame(all_data)
 
-# 2. Barre de recherche
-commune_liste = sorted(df['Commune'].unique())
-recherche = st.selectbox("Sélectionnez votre commune :", ["Toutes"] + commune_liste)
+# --- INTERFACE ---
+st.title("🇨🇮 Annuaire Santé Côte d'Ivoire")
 
-# 3. Filtrage des résultats
-if recherche != "Toutes":
-    resultats = df[df['Commune'] == recherche]
+menu = st.sidebar.radio("Que recherchez-vous ?", ["Pharmacies de Garde", "Centres de Santé (Annuaire)"])
+
+if menu == "Pharmacies de Garde":
+    st.header("🏥 Gardes en temps réel")
+    df = scraper_toute_la_garde()
+    
+    recherche = st.text_input("🔍 Ville, Commune ou Quartier (ex: Bouaké, Cocody...)")
+    
+    if not df.empty:
+        # Filtrage intelligent
+        mask = df.apply(lambda r: recherche.lower() in r.astype(str).str.lower().values, axis=1)
+        resultats = df[mask] if recherche else df
+        
+        for _, row in resultats.iterrows():
+            with st.expander(f"📍 {row['Nom']} ({row['Zone']})"):
+                st.write(f"🏠 **Lieu :** {row['Localisation']}")
+                st.write(f"📞 **Contact :** {row['Contact']}")
+                st.link_button("💬 Partager l'urgence", f"https://wa.me/?text=URGENCE%20SANTE%3A%20{row['Nom']}%20à%20{row['Localisation']}%20-%20Tel%3A%20{row['Contact']}")
+    else:
+        st.error("Données indisponibles. Réessayez plus tard.")
+
 else:
-    resultats = df
-
-# 4. Affichage des résultats sous forme de cartes
-for index, row in resultats.iterrows():
-    with st.container():
-        st.subheader(f"💊 {row['Pharmacie']}")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"📍 **Quartier :** {row['Quartier']}")
-            st.write(f"📞 **Tel :** {row['Contact']}")
-        with col2:
-            st.link_button("📍 Voir sur Maps", row['Maps'])
-            st.link_button("📞 Appeler", f"tel:{row['Contact']}")
-        st.divider()
-
-st.caption("Données mises à jour selon le tour de garde officiel de l'AIRP.")
+    st.header("🏨 Annuaire des Centres de Santé")
+    st.info("Cette section utilise la base de données officielle du gouvernement (annuaire.gouv.ci).")
+    # Ici, vous pouvez charger un fichier CSV contenant l'annuaire fixe
+    st.write("Fonctionnalité en cours de liaison avec l'annuaire national...")
