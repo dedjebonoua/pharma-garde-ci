@@ -1,2 +1,8 @@
+<!-- end list -->
 streamlit
 pandas
+requests
+beautifulsoup4
+folium
+streamlit-folium
+numpy
