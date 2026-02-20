@@ -1,88 +1,111 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+import re
 import unicodedata
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="SanteCI 24/7", layout="wide", page_icon="🏥")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="SanteCI Pro 24/7", layout="wide", page_icon="🏥")
 
-# --- STYLE CSS PERSONNALISÉ ---
+# --- STYLE CSS (Visibilité & Boutons) ---
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
     h1, h2, h3, p, label, span { color: #1A1A1A !important; }
-    .stButton>button { width: 100%; border-radius: 25px; height: 55px; background-color: #00AB66; color: white; font-weight: bold; font-size: 18px; border: none; }
-    .emergency-card { background-color: #D32F2F; color: white; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px; font-weight: bold; border: 2px solid #b71c1c; }
-    .pharma-card { background: #F0F2F6; padding: 15px; border-radius: 12px; border-left: 8px solid #00AB66; margin-bottom: 10px; color: black; }
+    /* Bouton vert validation */
+    .stButton>button { width: 100%; border-radius: 25px; height: 50px; background-color: #00AB66; color: white; font-weight: bold; border: none; font-size: 18px; }
+    /* Boutons Urgence Rouge */
+    .emergency-box { background-color: #D32F2F; color: white; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px; font-weight: bold; font-size: 22px; border: 2px solid #B71C1C; }
+    /* Cartes pharmacies */
+    .pharma-card { background: #F0F2F6; padding: 15px; border-radius: 12px; border-left: 8px solid #00AB66; margin-bottom: 10px; color: black; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
 """, unsafe_allow_html=True)
 
+# --- FONCTION DE NETTOYAGE ---
 def clean(text):
     if not text: return ""
     return "".join(c for c in unicodedata.normalize('NFD', text.lower()) if unicodedata.category(c) != 'Mn').strip()
 
-# --- BASE DE DONNÉES INTERNE (Garantit des résultats) ---
-# En attendant que le scraping soit rétabli, on met les pharmacies majeures par zone
-GARDES_LOCALE = {
-    "yopougon": ["Pharmacie du Bel Air (Palais) - 27 23 45 11 00", "Pharmacie Saint-André (Siporex) - 27 23 46 22 11"],
-    "cocody": ["Pharmacie de la Riviera (Golf) - 27 22 43 00 99", "Pharmacie Saint-Jean - 27 22 44 11 22"],
-    "abobo": ["Pharmacie de la Mairie - 27 24 39 00 11", "Pharmacie du Rail - 27 24 38 22 33"],
-    "bouake": ["Pharmacie de la Paix - 27 31 63 00 44", "Pharmacie du Commerce - 27 31 64 55 66"]
-}
+# --- ROBOT DE GARDE (S'ACTUALISE SEUL) ---
+@st.cache_data(ttl=3600) # Se met à jour toutes les heures
+def get_gardes_live():
+    url = "https://annuaireci.com/pharmacies-de-garde/"
+    try:
+        header = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=header, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        # On extrait les pharmacies (souvent dans des balises p ou li avec des numéros)
+        data = [i.text.strip() for i in soup.find_all(['p', 'li']) if re.search(r'\d{2}\s\d{2}', i.text)]
+        return data
+    except:
+        return ["⚠️ Erreur de connexion. Vérifiez votre connexion internet."]
 
+# --- BASE VIDAL INTERNE ---
 BASE_VIDAL = {
-    "litacold": {"n": "LITACOLD", "u": "Rhume et état grippal.", "d": "1 comp. 3 fois/jour.", "a": "⚠️ Risque de somnolence."},
-    "paracetamol": {"n": "PARACÉTAMOL (Doliprane/Efferalgan)", "u": "Douleurs et fièvre.", "d": "1g max 4 fois/jour.", "a": "⚠️ Attention au foie."},
-    "coartem": {"n": "COARTEM", "u": "Traitement du Paludisme.", "d": "Cure de 3 jours.", "a": "⚠️ Prendre avec un repas gras."}
+    "litacold": {"n": "LITACOLD", "u": "Rhume, nez bouché et fièvre.", "d": "1 comprimé 3 fois par jour.", "a": "⚠️ Attention : Risque de somnolence."},
+    "paracetamol": {"n": "PARACÉTAMOL (Doliprane, Efferalgan)", "u": "Douleurs et fièvre.", "d": "1g max par prise, 4g max par jour.", "a": "⚠️ Ne pas boire d'alcool avec."},
+    "coartem": {"n": "COARTEM", "u": "Traitement du Paludisme simple.", "d": "Cure de 3 jours (matin et soir).", "a": "⚠️ Prendre avec un repas gras."},
 }
 
-# --- BARRE LATÉRALE : URGENCES ---
+# --- BARRE LATÉRALE (URGENCES) ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/684/684101.png", width=100)
     st.markdown("### 🚨 NUMÉROS D'URGENCE")
-    st.markdown('<div class="emergency-card">🚑 SAMU : 185</div>', unsafe_allow_html=True)
-    st.markdown('<div class="emergency-card">🚒 POMPIERS : 180</div>', unsafe_allow_html=True)
-    st.markdown('<div class="emergency-card">🚓 POLICE : 170 / 111</div>', unsafe_allow_html=True)
-    st.info("Ces numéros sont gratuits depuis un mobile en Côte d'Ivoire.")
+    st.markdown('<div class="emergency-box">🚑 SAMU : 185</div>', unsafe_allow_html=True)
+    st.markdown('<div class="emergency-box">🚒 POMPIERS : 180</div>', unsafe_allow_html=True)
+    st.markdown('<div class="emergency-box">🚓 POLICE : 170 / 111</div>', unsafe_allow_html=True)
+    st.write("---")
+    st.write("💡 *Ces numéros sont gratuits depuis n'importe quel opérateur en CI.*")
 
-# --- CORPS PRINCIPAL ---
-st.title("🏥 SanteCI Assistant v5.0")
-tab1, tab2, tab3 = st.tabs(["💊 PHARMACIES", "🩺 IA DIAGNOSTIC", "📚 GUIDE VIDAL"])
+# --- CORPS DE L'APPLICATION ---
+st.title("🏥 SanteCI : Garde, Diagnostic & Vidal")
+t1, t2, t3 = st.tabs(["💊 PHARMACIES DE GARDE", "🩺 IA DIAGNOSTIC (ADA)", "📚 GUIDE VIDAL"])
 
-with tab1:
-    st.subheader("📍 Pharmacies de garde")
-    zone = st.text_input("Tapez votre commune (ex: Yopougon, Cocody...)", key="z_input")
-    if st.button("RECHERCHER MAINTENANT"):
+with t1:
+    st.subheader("📍 Rechercher une Pharmacie de Garde")
+    zone = st.text_input("Tapez votre commune (ex: Cocody, Yopougon, Yamoussoukro...)", key="z")
+    if st.button("AFFICHER LA LISTE ACTUELLE"):
+        liste = get_gardes_live()
         z_c = clean(zone)
-        trouve = False
-        for ville, listes in GARDES_LOCALE.items():
-            if z_c in ville:
-                st.success(f"Pharmacies de garde à {ville.capitalize()} :")
-                for p in listes:
-                    st.markdown(f'<div class="pharma-card">{p}</div>', unsafe_allow_html=True)
-                trouve = True
+        filtre = [p for p in liste if z_c in clean(p)]
         
-        if not trouve:
-            st.warning("⚠️ Base locale limitée. Pour une liste complète actualisée minute par minute, nous vous conseillons l'application officielle 'PharmaConsults'.")
-
-with tab2:
-    st.subheader("Analyseur Ada")
-    mal = st.text_area("Expliquez votre mal...")
-    if st.button("LANCER L'ANALYSE"):
-        c = clean(mal)
-        if "fievre" in c or "chaud" in c:
-                        st.error("🦟 SUSPICION PALUDISME : Faites un test TDR et hydratez-vous.")
-        elif "ventre" in c or "diarrhee" in c:
-            st.warning("🤢 TROUBLE DIGESTIF : Préparez un SRO (1L eau + 6 sucres + 1 sel).")
+        if filtre:
+            st.success(f"Voici les pharmacies trouvées pour '{zone}' :")
+            for p in filtre:
+                st.markdown(f'<div class="pharma-card">{p}</div>', unsafe_allow_html=True)
+                # Bouton GPS automatique
+                nom_p = p.split('-')[0].strip()
+                st.link_button(f"🗺️ Itinéraire vers {nom_p}", f"https://www.google.com/maps/search/{nom_p.replace(' ', '+')}")
         else:
-            st.info("Symptômes enregistrés. Reposez-vous et surveillez votre température.")
+            st.warning("Aucun résultat pour cette zone. Vérifiez l'orthographe ou essayez une zone proche.")
 
-with tab3:
-    st.subheader("Guide Médicaments")
-    med = st.text_input("Nom du médicament (ex: Litacold, Paracétamol...)")
-    if st.button("VOIR LA NOTICE"):
-        m_c = clean(med)
+with t2:
+    st.subheader("Analyseur de Symptômes Intelligent")
+    mal = st.text_area("Expliquez ce que vous ressentez (ex: J'ai de la fièvre et mal à la tête...)")
+    if st.button("ANALYSER MAINTENANT"):
+        c = clean(mal)
+        if any(x in c for x in ["fievre", "chaud", "frisson", "palu"]):
+            
+            st.error("🦟 SUSPICION PALUDISME : Faites un test TDR. Repos et hydratation.")
+        elif any(x in c for x in ["ventre", "diarrhee", "vomit"]):
+            st.warning("🤢 TROUBLE DIGESTIF : Risque de déshydratation. Préparez un SRO (1L eau + 6 sucres + 1 sel).")
+        else:
+            st.info("Symptômes enregistrés. Si la douleur persiste, consultez un médecin.")
+
+with t3:
+    st.subheader("Guide des Médicaments (Vidal)")
+    med_input = st.text_input("Nom du médicament (ex: Litacold, Paracétamol...)")
+    if st.button("VOIR LA FICHE"):
+        m_c = clean(med_input)
         match = False
         for k, v in BASE_VIDAL.items():
             if m_c in k:
-                st.markdown(f'<div class="pharma-card" style="border-color:#1976D2;"><h3>{v["n"]}</h3><b>Usage :</b> {v["u"]}<br><b>Dose :</b> {v["d"]}<br><span style="color:red;">{v["a"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f"""<div class="pharma-card" style="border-color:#1976D2;">
+                    <h3>{v['n']}</h3>
+                    <p><b>Usage :</b> {v['u']}</p>
+                    <p><b>Dosage :</b> {v['d']}</p>
+                    <p style="color:red; font-weight:bold;">{v['a']}</p>
+                </div>""", unsafe_allow_html=True)
                 match = True
-        if not match: st.error("Médicament non répertorié.")
+        if not match:
+            st.error("Médicament non répertorié dans la base simplifiée.")
+            
