@@ -194,3 +194,18 @@ with tab3:
         else:
             st.warning("Substance non présente en base rapide. Infiltration du serveur AIRP.ci...")
             st.link_button("🌐 ACCÉDER AU DATAPHARMA OFFICIEL AIRP.CI", "https://airp.ci/datapharma/liste-des-medicaments-enregistres")
+            # --- PIED DE PAGE LÉGAL (OBLIGATOIRE POUR PLAY STORE & DÉPLOIEMENT) ---
+st.write("---")
+with st.expander("⚖️ MENTIONS LÉGALES & CONFIDENTIALITÉ"):
+    st.markdown("""
+    **1. Clause de non-responsabilité (Disclaimer)** Cette application est un outil d'information technologique basé sur le scraping de données publiques et l'assistance IA (inspirée du protocole Ada Health). 
+    **Elle ne remplace en aucun cas un diagnostic médical professionnel.** En cas d'urgence, contactez immédiatement le SAMU (185).
+
+    **2. Politique de Confidentialité** SanteCI ne collecte, ne stocke, ni ne partage aucune de vos données personnelles ou de santé. 
+    Toutes les analyses effectuées dans l'onglet IA sont temporaires et supprimées dès que vous fermez l'application.
+
+    **3. Sources des données** Les informations de garde proviennent des serveurs publics de *pharmacies-de-garde.ci*. 
+    Les données médicaments sont issues du référentiel public de l'AIRP Côte d'Ivoire.
+    """)
+    
+            
