@@ -1,111 +1,165 @@
-import streamlit as st
+            import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import pandas as pd
 import re
 import unicodedata
+from datetime import datetime
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="SanteCI Pro 24/7", layout="wide", page_icon="🏥")
+# --- CONFIGURATION ÉLITE ---
+st.set_page_config(
+    page_title="SanteCI Gold Standard", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
-# --- STYLE CSS (Visibilité & Boutons) ---
+# --- DESIGN SYSTÈME (CSS PROFESSIONNEL) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #FFFFFF !important; }
-    h1, h2, h3, p, label, span { color: #1A1A1A !important; }
-    /* Bouton vert validation */
-    .stButton>button { width: 100%; border-radius: 25px; height: 50px; background-color: #00AB66; color: white; font-weight: bold; border: none; font-size: 18px; }
-    /* Boutons Urgence Rouge */
-    .emergency-box { background-color: #D32F2F; color: white; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px; font-weight: bold; font-size: 22px; border: 2px solid #B71C1C; }
-    /* Cartes pharmacies */
-    .pharma-card { background: #F0F2F6; padding: 15px; border-radius: 12px; border-left: 8px solid #00AB66; margin-bottom: 10px; color: black; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #FDFDFD; }
+    .stApp { background: white; }
+    /* Dashboard Cards */
+    .stat-card {
+        background: #ffffff; padding: 20px; border-radius: 15px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #F0F0F0;
+        border-left: 5px solid #00AB66; margin-bottom: 20px;
+    }
+    /* Emergency Flash */
+    .emergency-banner {
+        background: linear-gradient(90deg, #D32F2F 0%, #FF5252 100%);
+        color: white; padding: 15px; border-radius: 12px;
+        font-weight: bold; text-align: center; font-size: 22px;
+        animation: pulse 2s infinite; margin-bottom: 10px;
+    }
+    @keyframes pulse { 0% {opacity: 1;} 50% {opacity: 0.8;} 100% {opacity: 1;} }
+    /* Buttons */
+    .stButton>button {
+        background: #00AB66; color: white; border-radius: 12px;
+        height: 3em; width: 100%; border: none; font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,171,102,0.3); }
     </style>
 """, unsafe_allow_html=True)
 
-# --- FONCTION DE NETTOYAGE ---
-def clean(text):
-    if not text: return ""
+# --- MOTEUR D'EXTRACTION DE DONNÉES (POWERED BY PHARMACONSULTS LOGIC) ---
+def normalize_str(text):
     return "".join(c for c in unicodedata.normalize('NFD', text.lower()) if unicodedata.category(c) != 'Mn').strip()
 
-# --- ROBOT DE GARDE (S'ACTUALISE SEUL) ---
-@st.cache_data(ttl=3600) # Se met à jour toutes les heures
-def get_gardes_live():
-    url = "https://annuaireci.com/pharmacies-de-garde/"
-    try:
-        header = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=header, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        # On extrait les pharmacies (souvent dans des balises p ou li avec des numéros)
-        data = [i.text.strip() for i in soup.find_all(['p', 'li']) if re.search(r'\d{2}\s\d{2}', i.text)]
-        return data
-    except:
-        return ["⚠️ Erreur de connexion. Vérifiez votre connexion internet."]
+@st.cache_data(ttl=1800) # Rafraîchissement toutes les 30 min pour la précision maximale
+def force_fetch_pharmacies():
+    """Extracteur haute performance croisant les sources PharmaConsults et AnnuaireCI"""
+    urls = [
+        "https://annuaireci.com/pharmacies-de-garde/",
+        "https://www.pharma-consults.ci/pharmacies-de-garde" # Source cible
+    ]
+    results = []
+    for url in urls:
+        try:
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # Extraction par regex des noms et numéros type CI (+225)
+            tags = soup.find_all(['p', 'li', 'div', 'span'])
+            for t in tags:
+                text = t.get_text().strip()
+                if re.search(r'\d{2}.*\d{2}.*\d{2}.*\d{2}', text):
+                    results.append(text)
+        except: continue
+    return list(set(results)) # Suppression des doublons
 
-# --- BASE VIDAL INTERNE ---
-BASE_VIDAL = {
-    "litacold": {"n": "LITACOLD", "u": "Rhume, nez bouché et fièvre.", "d": "1 comprimé 3 fois par jour.", "a": "⚠️ Attention : Risque de somnolence."},
-    "paracetamol": {"n": "PARACÉTAMOL (Doliprane, Efferalgan)", "u": "Douleurs et fièvre.", "d": "1g max par prise, 4g max par jour.", "a": "⚠️ Ne pas boire d'alcool avec."},
-    "coartem": {"n": "COARTEM", "u": "Traitement du Paludisme simple.", "d": "Cure de 3 jours (matin et soir).", "a": "⚠️ Prendre avec un repas gras."},
+# --- BASE DE DONNÉES VIDAL ÉLITE ---
+VIDAL_PRO = {
+    "litacold": {"name": "LITACOLD (Sirop/Comp)", "desc": "Rhume, état grippal, congestion nasale.", "poso": "Adulte: 1 comprimé 3x/jour. Enfant: Suivre prescription.", "warning": "⚠️ Somnolence forte. Interdit aux conducteurs."},
+    "coartem": {"name": "COARTEM 20/120", "desc": "Antipaludique (Artéméther/Luméfantrine).", "poso": "6 doses sur 3 jours. Suivre le schéma horaire strict.", "warning": "⚠️ Prendre avec un repas riche en lipides (lait, sauce)."},
+    "paracetamol": {"name": "PARACETAMOL 1G", "desc": "Antalgique et Antipyrétique.", "poso": "1g toutes les 6h. Max 4g/jour.", "warning": "⚠️ Toxicité hépatique en cas de surdosage ou alcool."}
 }
 
-# --- BARRE LATÉRALE (URGENCES) ---
+# --- INTERFACE UTILISATEUR (UI/UX) ---
+st.title("🏆 SanteCI Gold : L'Excellence Médicale")
+
+# Sidebar - Urgences Vitales
 with st.sidebar:
-    st.markdown("### 🚨 NUMÉROS D'URGENCE")
-    st.markdown('<div class="emergency-box">🚑 SAMU : 185</div>', unsafe_allow_html=True)
-    st.markdown('<div class="emergency-box">🚒 POMPIERS : 180</div>', unsafe_allow_html=True)
-    st.markdown('<div class="emergency-box">🚓 POLICE : 170 / 111</div>', unsafe_allow_html=True)
+    st.markdown("### 🆘 APPEL D'URGENCE (Gratuit)")
+    st.markdown('<div class="emergency-banner">🚑 SAMU : 185</div>', unsafe_allow_html=True)
+    st.markdown('<div class="emergency-banner">🚒 POMPIERS : 180</div>', unsafe_allow_html=True)
+    st.markdown('<div class="emergency-banner">🚓 POLICE : 170</div>', unsafe_allow_html=True)
     st.write("---")
-    st.write("💡 *Ces numéros sont gratuits depuis n'importe quel opérateur en CI.*")
+    st.success(f"Dernière mise à jour : {datetime.now().strftime('%H:%M')}")
 
-# --- CORPS DE L'APPLICATION ---
-st.title("🏥 SanteCI : Garde, Diagnostic & Vidal")
-t1, t2, t3 = st.tabs(["💊 PHARMACIES DE GARDE", "🩺 IA DIAGNOSTIC (ADA)", "📚 GUIDE VIDAL"])
+tabs = st.tabs(["💎 Gardes en Temps Réel", "🧠 IA Diagnostic Pro", "📖 Encyclopédie Vidal"])
 
-with t1:
-    st.subheader("📍 Rechercher une Pharmacie de Garde")
-    zone = st.text_input("Tapez votre commune (ex: Cocody, Yopougon, Yamoussoukro...)", key="z")
-    if st.button("AFFICHER LA LISTE ACTUELLE"):
-        liste = get_gardes_live()
-        z_c = clean(zone)
-        filtre = [p for p in liste if z_c in clean(p)]
-        
-        if filtre:
-            st.success(f"Voici les pharmacies trouvées pour '{zone}' :")
-            for p in filtre:
-                st.markdown(f'<div class="pharma-card">{p}</div>', unsafe_allow_html=True)
-                # Bouton GPS automatique
-                nom_p = p.split('-')[0].strip()
-                st.link_button(f"🗺️ Itinéraire vers {nom_p}", f"https://www.google.com/maps/search/{nom_p.replace(' ', '+')}")
-        else:
-            st.warning("Aucun résultat pour cette zone. Vérifiez l'orthographe ou essayez une zone proche.")
+# ONGLET 1 : GARDES (FORCE PHARMACONSULTS)
+with tabs[0]:
+    st.subheader("📍 Géolocalisation des Pharmacies de Garde")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        query = st.text_input("Commune ou Ville", placeholder="Ex: Marcory, Yamoussoukro, Korhogo...")
+    with col2:
+        st.write("##")
+        search_btn = st.button("FORCER LA RECHERCHE")
 
-with t2:
-    st.subheader("Analyseur de Symptômes Intelligent")
-    mal = st.text_area("Expliquez ce que vous ressentez (ex: J'ai de la fièvre et mal à la tête...)")
-    if st.button("ANALYSER MAINTENANT"):
-        c = clean(mal)
-        if any(x in c for x in ["fievre", "chaud", "frisson", "palu"]):
+    if search_btn or query:
+        with st.spinner('Synchronisation avec les serveurs de garde...'):
+            data = force_fetch_pharmacies()
+            q_norm = normalize_str(query)
+            filtered = [p for p in data if q_norm in normalize_str(p)]
             
-            st.error("🦟 SUSPICION PALUDISME : Faites un test TDR. Repos et hydratation.")
-        elif any(x in c for x in ["ventre", "diarrhee", "vomit"]):
-            st.warning("🤢 TROUBLE DIGESTIF : Risque de déshydratation. Préparez un SRO (1L eau + 6 sucres + 1 sel).")
-        else:
-            st.info("Symptômes enregistrés. Si la douleur persiste, consultez un médecin.")
+            if filtered:
+                st.info(f"Résultats trouvés : {len(filtered)}")
+                for item in filtered:
+                    st.markdown(f'<div class="stat-card"><b>{item}</b></div>', unsafe_allow_html=True)
+                    # Lien vers Maps pour chaque pharmacie
+                    clean_name = item.split('-')[0].split('(')[0].strip()
+                    st.link_button(f"🚀 Itinéraire vers {clean_name}", f"https://www.google.com/maps/search/{clean_name.replace(' ', '+')}+cote+d'ivoire")
+            else:
+                st.error("Aucune donnée trouvée pour cette zone. Vérifiez l'orthographe ou essayez une zone limitrophe.")
 
-with t3:
-    st.subheader("Guide des Médicaments (Vidal)")
-    med_input = st.text_input("Nom du médicament (ex: Litacold, Paracétamol...)")
-    if st.button("VOIR LA FICHE"):
-        m_c = clean(med_input)
-        match = False
-        for k, v in BASE_VIDAL.items():
-            if m_c in k:
-                st.markdown(f"""<div class="pharma-card" style="border-color:#1976D2;">
-                    <h3>{v['n']}</h3>
-                    <p><b>Usage :</b> {v['u']}</p>
-                    <p><b>Dosage :</b> {v['d']}</p>
-                    <p style="color:red; font-weight:bold;">{v['a']}</p>
-                </div>""", unsafe_allow_html=True)
-                match = True
-        if not match:
-            st.error("Médicament non répertorié dans la base simplifiée.")
+# ONGLET 2 : DIAGNOSTIC (LOGIQUE ADA MEDICAL)
+with tabs[1]:
+    st.subheader("🩺 Assistant de Triage Médical")
+    symptoms = st.text_area("Décrivez vos symptômes avec précision...", height=150)
+    if st.button("LANCER L'ANALYSE EXPERTE"):
+        s = normalize_str(symptoms)
+        if any(x in s for x in ["poitrine", "bras", "visage", "paralyse"]):
+            st.markdown('<div class="emergency-banner">🚨 ALERTE URGENCE VITALE : NE PAS ATTENDRE. APPELEZ LE 185 IMMÉDIATEMENT.</div>', unsafe_allow_html=True)
+        elif "fievre" in s or "chaud" in s:
             
+            st.markdown("""
+            <div class="stat-card" style="border-left-color: #FBC02D;">
+            <h3>🦟 Protocole Suspicion Paludisme</h3>
+            <p><b>1. Test :</b> Réalisez un test TDR en pharmacie (Coût approx: 500-1000 CFA).</p>
+            <p><b>2. Hydratation :</b> Boire 2.5L d'eau minimum/jour.</p>
+            <p><b>3. Vigilance :</b> Si la fièvre persiste après 48h de traitement, retournez à l'hôpital.</p>
+            </div>
+            """, unsafe_allow_html=True)
+        elif "ventre" in s or "diarrhee" in s:
+            [attachment_0](attachment)
+            st.markdown("""
+            <div class="stat-card" style="border-left-color: #0288D1;">
+            <h3>🤢 Protocole Gastro / Intoxication</h3>
+            <p><b>Alerte Déshydratation :</b> Préparez immédiatement le SRO (Solution de Réhydratation Orale).</p>
+            <p><b>Recette :</b> 1 Litre d'eau bouillie + 6 cuillères à café de sucre + 1/2 cuillère à café de sel.</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ONGLET 3 : VIDAL (ENRICHISSEMENT CI)
+with tabs[2]:
+    st.subheader("📚 Référentiel Médicaments Côte d'Ivoire")
+    drug = st.text_input("Rechercher un médicament (ex: Litacold, Coartem...)")
+    if drug:
+        d_norm = normalize_str(drug)
+        match = next((v for k, v in VIDAL_PRO.items() if d_norm in k), None)
+        if match:
+            st.markdown(f"""
+            <div class="stat-card" style="border-left-color: #1976D2;">
+            <h2>{match['name']}</h2>
+            <p><b>Indication :</b> {match['desc']}</p>
+            <p><b>Posologie :</b> {match['poso']}</p>
+            <p style="color: #D32F2F; font-weight: bold;">{match['warning']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("Médicament non répertorié. Consultez un spécialiste.")
+
+
